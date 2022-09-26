@@ -10,9 +10,7 @@ import {
   FieldColorModeId,
 } from '@grafana/data';
 
-import { getBackendSrv } from '@grafana/runtime';
-
-import { getTemplateSrv } from '@grafana/runtime';
+import { getBackendSrv, getTemplateSrv } from '@grafana/runtime';
 
 import { MyQuery, MyDataSourceOptions, defaultQuery } from './types';
 
@@ -52,7 +50,7 @@ export class DataSource extends DataSourceApi<MyQuery, MyDataSourceOptions> {
           // fieldType can be either number of string
           var fieldType = field['type'] === 'number' ? FieldType.number : FieldType.string;
           // add 'name' and 'type' items to the output object
-          var outputField: FrameFieldType = { name: field['field_name'], type: fieldType, config: {} };
+          var outputField: FrameFieldType = { name: field['field_name'], type: fieldType, config: { links: [] } };
           // add color for 'arc__*' items(only apperas for the nodes)
           if ('color' in field) {
             outputField.config.color = { fixedColor: field['color'], mode: FieldColorModeId.Fixed };
@@ -60,6 +58,45 @@ export class DataSource extends DataSourceApi<MyQuery, MyDataSourceOptions> {
           // add disPlayName for 'detail__*' items
           if ('displayName' in field) {
             outputField.config.displayName = field['displayName'];
+          }
+
+          // add optional links (format: link__name__param)
+          let links: Record<string, any> = {};
+          for (let xkey in field) {
+            if (xkey.startsWith('links__')) {
+              let set = xkey.split('__');
+              if (!links[set[1]]) {
+                links[set[1]] = {};
+              }
+              links[set[1]][set[2]] = field[xkey];
+            }
+          }
+          if (Object.keys(links).length > 0) {
+            // transforms parameters into link objects
+            // outputField.config.links = [];
+            for (let ykey in links) {
+              let link = links[ykey];
+              // add single external link for items (url, title)
+              if ('url' in link) {
+                outputField.config.links.push({
+                  url: link['url'],
+                  title: link['title'] || 'Link',
+                  targetBlank: true,
+                });
+              }
+              // add single internal link for items (expr, uid, name)
+              if ('expr' in link && 'uid' in link) {
+                outputField.config.links.push({
+                  url: link['url'] || '',
+                  title: link['title'] || 'Link',
+                  internal: {
+                    query: { expr: link['expr'] },
+                    datasourceUid: link['uid'],
+                    datasourceName: link['name'] || link['uid'],
+                  },
+                });
+              }
+            }
           }
           outputFields.push(outputField);
         });
